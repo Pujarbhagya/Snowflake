@@ -1,0 +1,108 @@
+--creating warehouses
+
+Create Warehouse Import_WH_11 with
+Warehouse_size = 'Medium'
+Auto_suspend = 300
+Auto_resume = true
+Initially_suspended = true;
+
+Create Warehouse Transform_WH_11 with
+Warehouse_size = 'Medium'
+Auto_suspend = 300
+Auto_resume = true
+Initially_suspended = true;
+
+Create Warehouse Reporting_WH_11 with
+Warehouse_size = 'Medium'
+Auto_suspend = 300
+Auto_resume = true
+Initially_suspended = true;
+
+
+--creating databases
+
+create database staging_11;
+
+create database prod_11;
+
+
+--creating schemas
+
+create schema staging_11.Raw;
+
+alter schema staging_11.Raw set data_retention_time_in_days = 3;
+
+create schema staging_11.clean;
+
+alter schema staging_11.clean set data_retention_time_in_days = 3;
+
+create schema prod_11.reporting;
+
+alter schema prod_11.reporting set data_retention_time_in_days = 3;
+
+
+--creating roles and granting access to roles
+
+create role import_role_11;
+grant usage on warehouse Import_WH_11 to role import_role_11;
+
+create role transform_role_11;
+grant usage on warehouse Transform_WH_11 to role transform_role_11;
+
+create role reporting_role_11;
+grant usage on warehouse Reporting_WH_11 to role reporting_role_11;
+
+
+-- Granting Database and Schema Access to Roles
+-- import_role_11
+grant usage on database staging_11 to role import_role_11;
+grant usage on schema staging_11.raw to role import_role_11;
+grant usage on schema staging_11.clean to role import_role_11;
+grant all on all tables in schema staging_11.Raw to role import_role_11;
+grant all on future tables in schema staging_11.Raw to role import_role_11;
+grant all on all tables in schema staging_11.clean to role import_role_11;
+grant all on future tables in schema staging_11.clean to role import_role_11;
+
+-- transform_role_11
+grant usage on database staging_11 to role transform_role_11;
+grant usage on database prod_11 to role transform_role_11;
+grant usage on schema staging_11.clean to role transform_role_11;
+grant usage on schema prod_11.reporting to role transform_role_11;
+grant all on all tables in schema staging_11.clean to role transform_role_11;
+grant all on future tables in schema staging_11.clean to role transform_role_11;
+grant all on all tables in schema prod_11.reporting to role transform_role_11;
+grant all on future tables in schema prod_11.reporting to role transform_role_11;
+
+--reporting role
+grant usage on database prod_11 to role reporting_role_11;
+grant usage on schema prod_11.reporting to role reporting_role_11;
+grant select on all tables in schema prod_11.reporting to role reporting_role_11;
+grant select on future tables in schema prod_11.reporting to role reporting_role_11;
+
+--creating users and assigning roles
+create user userimport_11 password = 'Password123!' DEFAULT_ROLE = import_role_11;
+grant role import_role_11 to user userimport_11;
+
+create user usertransform_11 password = 'Password123!' DEFAULT_ROLE = transform_role_11;
+grant role transform_role_11 to user usertransform_11;
+
+create user userreporting_11 password = 'Password123!' DEFAULT_ROLE = reporting_role_11;
+grant role reporting_role_11 to user userreporting_11;
+
+-- creating usage Monitors
+create resource monitor import_monitor_11 with credit_quota = 100;
+create resource monitor transform_monitor_11 with credit_quota = 100;
+create resource monitor reporting_monitor_11 with credit_quota = 100;
+
+--assign the usage monitors to warehouses
+alter warehouse Import_WH_11 set RESOURCE_MONITOR = import_monitor_11;
+alter warehouse Transform_WH_11 set RESOURCE_MONITOR = transform_monitor_11;
+alter warehouse Reporting_WH_11 set RESOURCE_MONITOR = reporting_monitor_11;
+
+
+
+
+
+
+
+
