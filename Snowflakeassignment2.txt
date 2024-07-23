@@ -1,0 +1,190 @@
+1. create the database
+CREATE DATABASE Bhagya_DB;
+
+2. uploading sample data from snowflake to s3
+--Create a sample snowflake table as below,
+
+Create or replace transient table CUSTOMER_SNOWFLAKE_TABLE
+AS
+SELECT * FROM CUSTOMER_TEST limit 10000
+
+CREATE OR REPLACE TRANSIENT TABLE Bhagya_DB.PUBLIC.CUSTOMER_TEST
+AS
+SELECT * FROM 
+"SNOWFLAKE_SAMPLE_DATA"."TPCDS_SF100TCL"."CUSTOMER";
+
+--create external storage integration
+CREATE OR REPLACE STORAGE INTEGRATION s3_csv_int
+TYPE = EXTERNAL_STAGE
+STORAGE_PROVIDER = S3
+ENABLED = TRUE
+STORAGE_AWS_ROLE_ARN ='arn:aws:iam::905417995495:role/mysnowrole'
+STORAGE_ALLOWED_LOCATIONS =('s3://mysnow-assgn/CSV-assgn/');
+
+desc INTEGRATION s3_csv_int;
+
+--Create file format
+create or replace file format my_csv_unload_format
+type = csv field_delimiter = ',' skip_header = 1 null_if = ('NULL', 'null') empty_field_as_null = true compression = gzip;
+
+--Create external stage
+CREATE OR REPLACE STAGE my_s3_ext_stage
+STORAGE_INTEGRATION = s3_csv_int
+URL = 's3://mysnow-assgn/CSV-assgn/';
+
+--Copy command
+COPY INTO @BHAGYA_DB.PUBLIC.my_s3_ext_stage/Customer_data/
+from
+BHAGYA_DB.PUBLIC.CUSTOMER_TEST;
+
+3 QUESTION
+--QUERY DATA IN S3 FROM SNOWFLAKE
+
+SELECT $1 C_CUSTOMER_SK,
+$2 C_CUSTOMER_ID ,
+$3 C_CURRENT_CDEMO_SK ,
+$4 C_CURRENT_HDEMO_SK ,
+$5 C_CURRENT_ADDR_SK,
+$6 C_FIRST_SHIPTO_DATE_SK ,
+$7 C_FIRST_SALES_DATE_SK ,
+$8 C_SALUTATION ,
+$9 C_FIRST_NAME ,
+$10 C_LAST_NAME,
+$11 C_PREFERRED_CUST_FLAG ,
+$12 C_BIRTH_DAY ,
+$13 C_BIRTH_MONTH ,
+$14 C_BIRTH_YEAR,
+$16 C_LOGIN ,
+$17 C_EMAIL_ADDRESS ,
+$18 C_LAST_REVIEW_DATE
+FROM @BHAGYA_DB.PUBLIC.my_s3_ext_stage/Customer_data/. ---replace it with new stage 
+(file_format => BHAGYA_DB.PUBLIC.my_csv_unload_format)
+
+
+
+--Filter data directly from s3,
+
+SELECT $1 C_CUSTOMER_SK,
+$2 C_CUSTOMER_ID ,
+$3 C_CURRENT_CDEMO_SK ,
+$4 C_CURRENT_HDEMO_SK ,
+$5 C_CURRENT_ADDR_SK,
+$6 C_FIRST_SHIPTO_DATE_SK ,
+$7 C_FIRST_SALES_DATE_SK ,
+$8 C_SALUTATION ,
+$9 C_FIRST_NAME ,
+$10 C_LAST_NAME,
+$11 C_PREFERRED_CUST_FLAG ,
+$12 C_BIRTH_DAY ,
+$13 C_BIRTH_MONTH ,
+$14 C_BIRTH_YEAR,
+$16 C_LOGIN ,
+$17 C_EMAIL_ADDRESS ,
+$18 C_LAST_REVIEW_DATE
+FROM @BHAGYA_DB.PUBLIC.my_s3_ext_stage/Customer_data/
+(file_format => BHAGYA_DB.PUBLIC.my_csv_unload_format)
+WHERE C_CUSTOMER_SK ='64596949'
+
+
+--Execute group by,
+SELECT $9 C_FIRST_NAME,$10 C_LAST_NAME,COUNT(*)
+FROM @BHAGYA_DB.PUBLIC.my_s3_ext_stage/Customer_data/
+(file_format => BHAGYA_DB.PUBLIC.my_csv_unload_format)
+GROUP BY $9,$10
+
+
+--4. CREATE VIEW OVER S3 DATA
+
+CREATE OR REPLACE VIEW CUSTOMER_DATA
+AS
+SELECT $1 C_CUSTOMER_SK,
+$2 C_CUSTOMER_ID ,
+$3 C_CURRENT_CDEMO_SK ,
+$4 C_CURRENT_HDEMO_SK ,
+$5 C_CURRENT_ADDR_SK,
+$6 C_FIRST_SHIPTO_DATE_SK ,
+$7 C_FIRST_SALES_DATE_SK ,
+$8 C_SALUTATION ,
+$9 C_FIRST_NAME ,
+$10 C_LAST_NAME,
+$11 C_PREFERRED_CUST_FLAG ,
+$12 C_BIRTH_DAY ,
+$13 C_BIRTH_MONTH ,
+$14 C_BIRTH_YEAR,
+$16 C_LOGIN ,
+$17 C_EMAIL_ADDRESS ,
+$18 C_LAST_REVIEW_DATE
+FROM @BHAGYA_DB.PUBLIC.my_s3_ext_stage/Customer_data/
+(file_format => BHAGYA_DB.PUBLIC.my_csv_unload_format);
+
+SELECT * FROM CUSTOMER_DATA;
+
+--Now we can directly query data from s3 through view. What is the disadvantage of using 
+--this approach ? Can you see partitions being scanned in the backend ?
+
+disadvantage of using this approach are
+--1. Slow query performance
+--2. Scanning large amounts of data had lead to high cost
+--3. Lack of indexes
+
+--No we cannot see the partitions being scanned because partitions are created but are not visible and handled by the snowflake itself
+--1. Seamless Data Integration
+--2. cost effiency
+--3. It provides scalability
+--4. Improves performance
+
+Totally 356 partitions got scanned from snowflake table
+
+
+
+-- Join the view we created with a table on snowflake,
+Create or replace transient table CUSTOMER_SNOWFLAKE_TABLE
+AS
+SELECT * FROM CUSTOMER_TEST limit 10000
+
+--Join this with the view we created earlier,
+SELECT B.* 
+FROM CUSTOMER_SNOWFLAKE_TABLE B
+LEFT OUTER JOIN 
+CUSTOMER_DATA A
+ON
+A.C_CUSTOMER_SK = B.C_CUSTOMER_SK
+
+--Now we successfully joined data in s3 with snowflake table. It may look simple but this 
+--approach has lot of potential.
+
+--1. 
+
+--QUESTION 5
+--UNLOAD DATA BACK TO S3
+
+COPY INTO @BHAGYA_DB.PUBLIC.my_s3_ext_stage/Customer_joined_data/
+from(
+SELECT B.* 
+FROM CUSTOMER_SNOWFLAKE_TABLE B
+LEFT OUTER JOIN 
+CUSTOMER_DATA A
+ON
+A.C_CUSTOMER_SK = B.C_CUSTOMER_SK
+)
+
+
+6.ADVANTAGES AND DISADVANTAGES
+
+--Advantages
+--1. It is low storage cost for large volumes of data
+--2. Unlimited storage - Scalability
+
+--Disadvantages
+--1. Query performance will be slow
+--2. Complexity of data
+--3. It costs additionally while transferring data from s3 to snowflake
+
+
+
+
+
+
+
+
+
