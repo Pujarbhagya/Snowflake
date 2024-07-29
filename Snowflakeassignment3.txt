@@ -82,44 +82,46 @@ CREATE OR REPLACE TABLE PERSON_MASTER (
     name STRING,
     age NUMBER,
     address STRING);
-    
---create task
-CREATE OR REPLACE TASK unnest_task
-SCHEDULE = '1 minute'
-WHEN SYSTEM$STREAM_HAS_DATA('PERSON_NESTED_STREAM')
+	
+	
+	
+ --create stored procedure   
+CREATE OR REPLACE PROCEDURE update_person_master()
+RETURNS STRING
+LANGUAGE SQL
 AS
-MERGE INTO PERSON_MASTER t
-USING (
-    SELECT data:id::STRING as id,
-           data:name::STRING as name,
-           data:age::NUMBER as age,
-           data:address::STRING as address
-    FROM PERSON_NESTED_STREAM
-) s
-ON t.id = s.id
-WHEN MATCHED THEN UPDATE SET t.name = s.name, t.age = s.age, t.address = s.address
-WHEN NOT MATCHED THEN INSERT (id, name, age, address) VALUES (s.id, s.name, s.age, s.address);
-
-
---4. Test PIPELINE
-
---A) TRUNCATING THE DATA IN TABLES:
-TRUNCATE TABLE PERSON_NESTED;
-TRUNCATE TABLE PERSON_MASTER;
-TRUNCATE TABLE PERSON_STREAM;
-
-SELECT * FROM PERSON_NESTED;
-SELECT * FROM PERSON_MASTER;
-
-SELECT * FROM PERSON_STREAM;
-
-SHOW PIPES;
-
-SHOW TASKS;
-
-
-
-
+$$
+BEGIN
+    MERGE INTO PERSON_MASTER AS target
+    USING (
+        SELECT
+            VALUE:$1::VARCHAR AS ID,
+            VALUE:$2::VARCHAR AS Name,
+            VALUE:$3::INTEGER AS Age,
+            VALUE:$4::VARCHAR AS Location,
+            IFF(VALUE:$5::VARCHAR = '' OR VALUE:$5 IS NULL, '00000', VALUE:$5::VARCHAR) AS Zip,
+            METADATA$FILENAME AS Filename,
+            METADATA$FILE_ROW_NUMBER AS FileRowNumber,
+            TO_TIMESTAMP_NTZ(CURRENT_TIMESTAMP) AS IngestedTimestamp
+        FROM PERSON_NESTED,
+        LATERAL FLATTEN(input => PERSON_NESTED.person) AS flattened
+    ) AS source
+    ON target.ID = source.ID
+    WHEN MATCHED THEN
+        UPDATE SET
+            target.Name = source.Name,
+            target.Age = source.Age,
+            target.Location = source.Location,
+            target.Zip = source.Zip,
+            target.Filename = source.Filename,
+            target.FileRowNumber = source.FileRowNumber,
+            target.IngestedTimestamp = source.IngestedTimestamp
+    WHEN NOT MATCHED THEN
+        INSERT (ID, Name, Age, Location, Zip, Filename, FileRowNumber, IngestedTimestamp)
+        VALUES (source.ID, source.Name, source.Age, source.Location, source.Zip, source.Filename, source.FileRowNumber, source.IngestedTimestamp);
+    RETURN 'MERGE operation completed successfully';
+END;
+$$;
 
 
 
