@@ -1,0 +1,128 @@
+--create warehouse
+use warehouse SNOW_WH;
+
+--create database
+create database assgn3_db;
+
+/* External Stage on S3:
+a. Create User in AWS with Programmatic access and 
+copy the credentials. 
+
+b. Create s3 bucket
+
+c. Create Stage: Use below SQL statement in Snowflake 
+to create external stage on s3(AWS). */
+
+
+--Create external stage
+CREATE OR REPLACE STAGE assgn_stg
+URL='s3://assgn3/json/'
+CREDENTIALS=(AWS_KEY_ID='AKIA5FTY6GTTWYFH5MVC' AWS_SECRET_KEY='hVYcBCSm8e3M7EU7sRvgO7IhsraDLeaN4X3pIK3u');
+
+
+--d. CREATE table in Snowflake with VARIANT column
+CREATE OR REPLACE TABLE PERSON_NESTED (
+    person VARIANT
+);
+
+
+--e. Create a Snowpipe with Auto Ingest Enabled
+CREATE OR REPLACE PIPE person_pipe AUTO_INGEST = TRUE AS
+COPY INTO PERSON_NESTED
+FROM (
+    SELECT 
+    OBJECT_CONSTRUCT(
+        'ID', $1,
+        'Name', $2,
+        'Age', $3,
+        'Location', $4,
+        'Zip', IFF($5 = '' OR $5 IS NULL, '00000', $5),
+        'Filename', METADATA$FILENAME,
+        'FileRowNumber', METADATA$FILE_ROW_NUMBER,
+        'IngestedTimestamp', TO_TIMESTAMP_NTZ(CURRENT_TIMESTAMP)
+    ) AS person
+    FROM @assgn_stg
+)
+ON_ERROR = CONTINUE;
+
+alter pipe person_pipe refresh;
+
+show pipes;
+
+--f. Subscribe the Snowflake SQS Queue in s3:
+
+--g. Test Snowpipe by copying the sample JSON file and upload the file to s3 in path
+
+select system$pipe_status('person_pipe');
+
+show pipes;
+
+SELECT *
+FROM TABLE(INFORMATION_SCHEMA.COPY_HISTORY(
+    table_name => 'person_nested',
+    start_time => DATEADD('hour', -24, CURRENT_TIMESTAMP())
+));
+
+select * from person_nested;
+
+--Change Data Capture using Streams, Tasks and Merge
+
+/* .Create Streams on PERSON_NESTED table to capture the 
+change data on PERSON_NESTED table and use TASKS to Run 
+SQL/Stored Procedure to Unnested the data from 
+PERSON_NESTED and create PERSON_MASTER table. */
+
+create or replace stream person_stream on table person_nested;
+
+show streams;
+
+--STEP 10. Create PERSON_MASTER Table:
+CREATE OR REPLACE TABLE PERSON_MASTER (
+    id STRING,
+    name STRING,
+    age NUMBER,
+    address STRING);
+    
+--create task
+CREATE OR REPLACE TASK unnest_task
+SCHEDULE = '1 minute'
+WHEN SYSTEM$STREAM_HAS_DATA('PERSON_NESTED_STREAM')
+AS
+MERGE INTO PERSON_MASTER t
+USING (
+    SELECT data:id::STRING as id,
+           data:name::STRING as name,
+           data:age::NUMBER as age,
+           data:address::STRING as address
+    FROM PERSON_NESTED_STREAM
+) s
+ON t.id = s.id
+WHEN MATCHED THEN UPDATE SET t.name = s.name, t.age = s.age, t.address = s.address
+WHEN NOT MATCHED THEN INSERT (id, name, age, address) VALUES (s.id, s.name, s.age, s.address);
+
+
+--4. Test PIPELINE
+
+--A) TRUNCATING THE DATA IN TABLES:
+TRUNCATE TABLE PERSON_NESTED;
+TRUNCATE TABLE PERSON_MASTER;
+TRUNCATE TABLE PERSON_STREAM;
+
+SELECT * FROM PERSON_NESTED;
+SELECT * FROM PERSON_MASTER;
+
+SELECT * FROM PERSON_STREAM;
+
+SHOW PIPES;
+
+SHOW TASKS;
+
+
+
+
+
+
+
+
+
+
