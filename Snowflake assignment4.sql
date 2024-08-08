@@ -90,6 +90,8 @@ FROM (
   FROM @ASSGN4_DB.PUBLIC.assgnt4_stg/list_file.json)
   FILE_FORMAT = (FORMAT_NAME = 'ASSGN4_DB.PUBLIC.list_json_format')
   ON_ERROR = 'CONTINUE';
+
+  desc pipe list_pipe;
   
 
 CREATE OR REPLACE PIPE info_pipe1 AUTO_INGEST = TRUE AS
@@ -142,10 +144,9 @@ FROM (
     ON_ERROR = 'CONTINUE';
 
 
+#trucate the tables
 truncate table list_table;
-
 truncate table info_table;
-
 truncate table stats_table; 
 
 show pipes;
